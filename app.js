@@ -1,9 +1,17 @@
 // =========================================================================
-// 1. CONEXÃO COM SUPABASE (SUAS CREDENCIAIS)
+// 1. CONEXÃO SEGURA COM SUPABASE (SEM TRAVAR BOTÕES SE OFFLINE)
 // =========================================================================
 const SUPABASE_URL = 'https://byojzikfumvajfsublgr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_wGo87VGrhJH5svvF_29-Ng_imB-Atav';
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let supabaseClient = null;
+try {
+  if (window.supabase && typeof window.supabase.createClient === 'function') {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+} catch (err) {
+  console.warn("Aviso ao iniciar Supabase:", err);
+}
 
 // Bases Oficiais Siconfi para Prova Real e Modo Demonstração
 const OFICIAL_SICONFI = {
@@ -15,7 +23,7 @@ const OFICIAL_SICONFI = {
 let estadoGlobal = {
   codigoSiconfi: "",
   municipio: "",
-  meses: [], // Lista ordenada de objetos mensais
+  meses: [],
   totais: { rcl: 0, rclAjustada: 0, dtp: 0, percentual: 0 },
   composicaoReceita: { impostos: 0, transferencias: 0, outras: 0 }
 };
@@ -24,227 +32,69 @@ let chartEvolucaoInstance = null;
 let chartComposicaoInstance = null;
 
 // =========================================================================
-// 2. AUTENTICAÇÃO E CONTROLE DE PERFIS
+// 2. AUTENTICAÇÃO E CONTROLE DE PERFIS (ACESSO COMPLETO GARANTIDO)
 // =========================================================================
-document.getElementById('loginForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value.trim();
-  const errBox = document.getElementById('loginError');
-  errBox.textContent = "Autenticando no Supabase...";
+document.addEventListener('DOMContentLoaded', () => {
+  const loginForm = document.getElementById('loginForm');
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value.trim();
+      const errBox = document.getElementById('loginError');
+      errBox.style.color = "#00b0ff";
+      errBox.textContent = "Autenticando no Supabase...";
 
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  if (error) {
-    errBox.textContent = "Erro no login: " + error.message + " (Você pode usar os botões de acesso rápido abaixo).";
-  } else {
-    errBox.textContent = "";
-    iniciarSessao('tecnico');
-  }
-});
-
-function entrarModoDemo(perfil) {
-  iniciarSessao(perfil);
-}
-
-function iniciarSessao(perfil) {
-  document.getElementById('loginOverlay').classList.add('hidden');
-  document.getElementById('appContainer').classList.remove('hidden');
-  document.getElementById('roleSwitcher').value = perfil;
-  aplicarPermissoesPerfil(perfil);
-  carregarHistoricoSupabase();
-}
-
-function sairSistema() {
-  supabaseClient.auth.signOut();
-  document.getElementById('appContainer').classList.add('hidden');
-  document.getElementById('loginOverlay').classList.remove('hidden');
-}
-
-document.getElementById('roleSwitcher').addEventListener('change', (e) => {
-  aplicarPermissoesPerfil(e.target.value);
-});
-
-function aplicarPermissoesPerfil(perfil) {
-  const navMod1 = document.getElementById('navMod1');
-  const boxProvaReal = document.getElementById('boxProvaReal');
-
-  if (perfil === 'tecnico') {
-    navMod1.classList.remove('hidden');
-    boxProvaReal.classList.remove('hidden');
-  } else if (perfil === 'secretario') {
-    navMod1.classList.remove('hidden');
-    boxProvaReal.classList.remove('hidden');
-    ativarAba('mod2');
-  } else if (perfil === 'cidadao') {
-    // Visão focada em controle social e transparência
-    navMod1.classList.add('hidden');
-    boxProvaReal.classList.add('hidden');
-    ativarAba('mod2');
-  }
-}
-
-// Navegação entre abas
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => ativarAba(btn.dataset.tab));
-});
-
-function ativarAba(tabId) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.module-section').forEach(m => m.classList.remove('active'));
-  document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
-  document.getElementById(tabId).classList.add('active');
-}
-
-// =========================================================================
-// 3. LEITURA, AUDITORIA E CÁLCULO DA MSC (.CSV)
-// =========================================================================
-document.getElementById('csvInput').addEventListener('change', async (e) => {
-  const files = Array.from(e.target.files);
-  if (!files.length) return;
-
-  const arquivosProcessados = [];
-  let totalDebitos = 0;
-  let totalCreditos = 0;
-  let temValoresNegativos = false;
-
-  for (const file of files) {
-    const texto = await file.text();
-    const linhas = texto.split(/\r?\n/).filter(l => l.trim() !== "");
-    if (linhas.length < 3) continue;
-
-    // Linha 1: CodigoSiconfi;YYYY-MM
-    const meta = linhas[0].split(';');
-    const codigoSiconfi = (meta[0] || "DESCONHECIDO").trim();
-    const periodo = (meta[1] || file.name).trim();
-
-    // Linha 2: Cabeçalho
-    const headers = linhas[1].split(';').map(h => h.trim());
-    const idxConta = headers.indexOf('ContaContabil');
-    const idxValor = headers.indexOf('Valor');
-    const idxTipoValor = headers.indexOf('TipoValor');
-    const idxNat = headers.indexOf('NaturezaValor');
-
-    let recBruta = 0;
-    let dedRcl = 0;
-    let dedAjustePessoal = 0;
-    let despPessoal = 0;
-    let impostos = 0;
-    let transferencias = 0;
-    let outrasRec = 0;
-
-    for (let i = 2; i < linhas.length; i++) {
-      const cols = linhas[i].split(';');
-      if (cols.length < 5) continue;
-
-      const conta = (cols[idxConta] || "").trim();
-      const valor = parseFloat((cols[idxValor] || "0").replace(',', '.')) || 0;
-      const tipoValor = (cols[idxTipoValor] || "").trim();
-      const nat = (cols[idxNat] || "").trim().toUpperCase();
-
-      if (valor < 0) temValoresNegativos = true;
-      if (tipoValor === 'period_change') {
-        if (nat === 'D') totalDebitos += valor;
-        if (nat === 'C') totalCreditos += valor;
+      if (!supabaseClient) {
+        errBox.style.color = "#ff5252";
+        errBox.textContent = "Erro de conexão com Supabase. Use os botões de acesso rápido abaixo.";
+        return;
       }
 
-      // Extrai pares de Informações Complementares (IC1..IC6)
-      const ics = {};
-      for (let k = 1; k <= 6; k++) {
-        const valIc = (cols[headers.indexOf(`InformacaoComplementar${k}`)] || "").trim();
-        const tipoIc = (cols[headers.indexOf(`TipoInformacaoComplementar${k}`)] || "").trim();
-        if (tipoIc) ics[tipoIc] = valIc;
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) {
+        errBox.style.color = "#ff5252";
+        errBox.textContent = "Erro no login: " + error.message;
+      } else {
+        errBox.textContent = "";
+        // Usuário autenticado recebe acesso completo (Técnico/Admin)
+        iniciarSessao('tecnico', email);
       }
-
-      // REGRA RCL (Anexo 3 RREO - period_change)
-      if (tipoValor === 'period_change') {
-        const sinalC = (nat === 'C' ? valor : -valor);
-        const sinalD = (nat === 'D' ? valor : -valor);
-
-        // Receita Realizada (6212)
-        if (conta.startsWith('6212')) {
-          recBruta += sinalC;
-          const nr = ics['NR'] || "";
-          if (nr.startsWith('11')) impostos += sinalC;
-          else if (nr.startsWith('17')) transferencias += sinalC;
-          else outrasRec += sinalC;
-
-          // Deduções para RCL Ajustada (Emendas CO 3110/3120 e Agentes Saúde FR ending 604)
-          const co = ics['CO'] || "";
-          const fr = ics['FR'] || "";
-          if (['3110', '3111', '3120', '3121'].includes(co) || fr.endsWith('604')) {
-            dedAjustePessoal += sinalC;
-          }
-        }
-
-        // Deduções da Receita (6213 - FUNDEB, Renúncias, etc.)
-        if (conta.startsWith('6213')) {
-          dedRcl += sinalD;
-        }
-
-        // Despesa Total com Pessoal (6221303, 6221304, 6221307 - Executivo PO 10131/10132)
-        if (conta.startsWith('6221303') || conta.startsWith('6221304') || conta.startsWith('6221307')) {
-          const po = ics['PO'] || "";
-          const nd = ics['ND'] || "";
-          const fr = ics['FR'] || "";
-          if ((po.startsWith('1013') || po === "") && (nd.startsWith('31') || nd.startsWith('339034'))) {
-            // Exclui não computadas (indenizações 94, sentenças 91, ex. anteriores 92, FR 604)
-            const elem = nd.substring(4, 6);
-            if (!['91', '92', '94'].includes(elem) && !fr.endsWith('604')) {
-              despPessoal += sinalD;
-            }
-          }
-        }
-      }
-    }
-
-    arquivosProcessados.push({
-      codigoSiconfi,
-      periodo,
-      recBruta,
-      dedRcl,
-      rclMensal: recBruta - dedRcl,
-      dedAjustePessoal,
-      despPessoal,
-      impostos,
-      transferencias,
-      outrasRec
     });
   }
 
-  // Ordena cronologicamente e pega os últimos 12 meses
-  arquivosProcessados.sort((a, b) => a.periodo.localeCompare(b.periodo));
-  const ultimos12 = arquivosProcessados.slice(-12);
+  const roleSwitcher = document.getElementById('roleSwitcher');
+  if (roleSwitcher) {
+    roleSwitcher.addEventListener('change', (e) => {
+      aplicarPermissoesPerfil(e.target.value);
+    });
+  }
 
-  if (!ultimos12.length) return;
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => ativarAba(btn.dataset.tab));
+  });
 
-  const cod = ultimos12[0].codigoSiconfi;
-  const infoOficial = OFICIAL_SICONFI[cod];
-  const nomeMunicipio = infoOficial ? infoOficial.nome : `Município Siconfi ${cod}`;
+  const csvInput = document.getElementById('csvInput');
+  if (csvInput) {
+    csvInput.addEventListener('change', processarArquivosCSV);
+  }
+});
 
-  // Atualiza Auditoria STN
-  atualizarAuditoria(ultimos12.length, totalDebitos, totalCreditos, temValoresNegativos);
+// Funções globais chamadas diretamente pelo HTML (onclick)
+window.entrarModoDemo = function(perfil) {
+  iniciarSessao(perfil, "Modo Demonstração");
+};
 
-  // Consolida totais
-  consolidarResultados(cod, nomeMunicipio, ultimos12);
-}
+window.sairSistema = function() {
+  if (supabaseClient) supabaseClient.auth.signOut();
+  document.getElementById('appContainer').classList.add('hidden');
+  document.getElementById('loginOverlay').classList.remove('hidden');
+};
 
-function atualizarAuditoria(qtdMeses, debitos, creditos, negativos) {
-  const list = document.getElementById('auditList');
-  const diffPartidas = Math.abs(debitos - creditos);
-  list.innerHTML = `
-    <li class="audit-item ok">✅ <strong>Estrutura CSV & Delimitador (;):</strong> ${qtdMeses} arquivo(s) lido(s) conforme Leiaute Portaria STN nº 642.</li>
-    <li class="audit-item ${negativos ? 'warn' : 'ok'}">
-      ${negativos ? '⚠️' : '✅'} <strong>Verificação de Valores Negativos:</strong> ${negativos ? 'Encontrados valores negativos (atenção ao Ranking Siconfi).' : 'Nenhum valor negativo indevido encontrado.'}
-    </li>
-    <li class="audit-item ${diffPartidas < 1 ? 'ok' : 'warn'}">
-      ✅ <strong>Partidas Dobradas (Movimento):</strong> Débitos (${formatarMoeda(debitos)}) vs. Créditos (${formatarMoeda(creditos)}).
-    </li>
-  `;
-}
-
-// Modo Demonstração com Dados Reais
-function carregarBaseDemo(cod) {
+window.carregarBaseDemo = function(cod) {
   const info = OFICIAL_SICONFI[cod];
+  if (!info) return;
+
   const mesesBase = [
     "2025-01","2025-02","2025-03","2025-04","2025-05","2025-06",
     "2025-07","2025-08","2025-09","2025-10","2025-11","2025-12"
@@ -270,7 +120,6 @@ function carregarBaseDemo(cod) {
     };
   });
 
-  // Ajuste fino no último mês para fechar centavos exatos com o Siconfi
   const somaRcl = simulados.reduce((acc, x) => acc + x.rclMensal, 0);
   const somaDtp = simulados.reduce((acc, x) => acc + x.despPessoal, 0);
   simulados[11].rclMensal += (info.rcl - somaRcl);
@@ -278,6 +127,221 @@ function carregarBaseDemo(cod) {
 
   atualizarAuditoria(12, info.rcl * 2, info.rcl * 2, false);
   consolidarResultados(cod, info.nome, simulados);
+};
+
+window.exportarExcel = function() {
+  if (!estadoGlobal.meses.length) {
+    alert("Importe os dados da MSC ou carregue uma base demo antes de exportar.");
+    return;
+  }
+  const dadosPlanilha = estadoGlobal.meses.map(m => ({
+    Codigo_Siconfi: m.codigoSiconfi,
+    Municipio: estadoGlobal.municipio,
+    Periodo: m.periodo,
+    Receita_Bruta: Number(m.recBruta.toFixed(2)),
+    Deducoes_RCL: Number(m.dedRcl.toFixed(2)),
+    RCL_Mensal: Number(m.rclMensal.toFixed(2)),
+    Despesa_Pessoal_Mensal: Number(m.despPessoal.toFixed(2))
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(dadosPlanilha);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Apuracao_MSC_LRF");
+  XLSX.writeFile(wb, `Relatorio_Fiscal_${estadoGlobal.codigoSiconfi}.xlsx`);
+};
+
+window.carregarHistoricoSupabase = async function() {
+  const tbody = document.getElementById('tbodySupabase');
+  if (!supabaseClient) {
+    tbody.innerHTML = `<tr><td colspan="7" class="muted">Modo offline ativo.</td></tr>`;
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from('apuracoes')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (error || !data || !data.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="muted">Nenhum registro salvo na nuvem ainda (ou crie a tabela 'apuracoes' no SQL Editor do Supabase).</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = data.map(row => `
+    <tr>
+      <td>${new Date(row.created_at).toLocaleString('pt-BR')}</td>
+      <td>${row.codigo_siconfi}</td>
+      <td><strong>${row.municipio}</strong></td>
+      <td>${row.periodo_final}</td>
+      <td>${formatarMoeda(row.rcl)}</td>
+      <td>${formatarMoeda(row.dtp)}</td>
+      <td><strong>${Number(row.percentual_dtp).toFixed(2).replace('.', ',')}%</strong></td>
+    </tr>
+  `).join('');
+};
+
+function iniciarSessao(perfil, usuarioIdentificacao) {
+  document.getElementById('loginOverlay').classList.add('hidden');
+  document.getElementById('appContainer').classList.remove('hidden');
+  document.getElementById('roleSwitcher').value = perfil;
+  
+  const statusEl = document.getElementById('lblSupabaseStatus');
+  if (usuarioIdentificacao && usuarioIdentificacao.includes('@')) {
+    statusEl.textContent = `Logado: ${usuarioIdentificacao} (Acesso Total)`;
+  }
+
+  aplicarPermissoesPerfil(perfil);
+  carregarHistoricoSupabase();
+}
+
+function aplicarPermissoesPerfil(perfil) {
+  const navMod1 = document.getElementById('navMod1');
+  const boxProvaReal = document.getElementById('boxProvaReal');
+
+  if (perfil === 'tecnico') {
+    navMod1.classList.remove('hidden');
+    boxProvaReal.classList.remove('hidden');
+    ativarAba('mod1');
+  } else if (perfil === 'secretario') {
+    navMod1.classList.remove('hidden');
+    boxProvaReal.classList.remove('hidden');
+    ativarAba('mod2');
+  } else if (perfil === 'cidadao') {
+    navMod1.classList.add('hidden');
+    boxProvaReal.classList.add('hidden');
+    ativarAba('mod2');
+  }
+}
+
+function ativarAba(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.module-section').forEach(m => m.classList.remove('active'));
+  const targetBtn = document.querySelector(`[data-tab="${tabId}"]`);
+  const targetSec = document.getElementById(tabId);
+  if (targetBtn) targetBtn.classList.add('active');
+  if (targetSec) targetSec.classList.add('active');
+}
+
+// =========================================================================
+// 3. LEITURA, AUDITORIA E CÁLCULO DA MSC (.CSV)
+// =========================================================================
+async function processarArquivosCSV(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+
+  const arquivosProcessados = [];
+  let totalDebitos = 0;
+  let totalCreditos = 0;
+  let temValoresNegativos = false;
+
+  for (const file of files) {
+    const texto = await file.text();
+    const linhas = texto.split(/\r?\n/).filter(l => l.trim() !== "");
+    if (linhas.length < 3) continue;
+
+    const meta = linhas[0].split(';');
+    const codigoSiconfi = (meta[0] || "DESCONHECIDO").trim();
+    const periodo = (meta[1] || file.name).trim();
+
+    const headers = linhas[1].split(';').map(h => h.trim());
+    const idxConta = headers.indexOf('ContaContabil');
+    const idxValor = headers.indexOf('Valor');
+    const idxTipoValor = headers.indexOf('TipoValor');
+    const idxNat = headers.indexOf('NaturezaValor');
+
+    let recBruta = 0, dedRcl = 0, dedAjustePessoal = 0, despPessoal = 0;
+    let impostos = 0, transferencias = 0, outrasRec = 0;
+
+    for (let i = 2; i < linhas.length; i++) {
+      const cols = linhas[i].split(';');
+      if (cols.length < 5) continue;
+
+      const conta = (cols[idxConta] || "").trim();
+      const valor = parseFloat((cols[idxValor] || "0").replace(',', '.')) || 0;
+      const tipoValor = (cols[idxTipoValor] || "").trim();
+      const nat = (cols[idxNat] || "").trim().toUpperCase();
+
+      if (valor < 0) temValoresNegativos = true;
+      if (tipoValor === 'period_change') {
+        if (nat === 'D') totalDebitos += valor;
+        if (nat === 'C') totalCreditos += valor;
+      }
+
+      const ics = {};
+      for (let k = 1; k <= 6; k++) {
+        const valIc = (cols[headers.indexOf(`InformacaoComplementar${k}`)] || "").trim();
+        const tipoIc = (cols[headers.indexOf(`TipoInformacaoComplementar${k}`)] || "").trim();
+        if (tipoIc) ics[tipoIc] = valIc;
+      }
+
+      if (tipoValor === 'period_change') {
+        const sinalC = (nat === 'C' ? valor : -valor);
+        const sinalD = (nat === 'D' ? valor : -valor);
+
+        if (conta.startsWith('6212')) {
+          recBruta += sinalC;
+          const nr = ics['NR'] || "";
+          if (nr.startsWith('11')) impostos += sinalC;
+          else if (nr.startsWith('17')) transferencias += sinalC;
+          else outrasRec += sinalC;
+
+          const co = ics['CO'] || "";
+          const fr = ics['FR'] || "";
+          if (['3110', '3111', '3120', '3121'].includes(co) || fr.endsWith('604')) {
+            dedAjustePessoal += sinalC;
+          }
+        }
+
+        if (conta.startsWith('6213')) {
+          dedRcl += sinalD;
+        }
+
+        if (conta.startsWith('6221303') || conta.startsWith('6221304') || conta.startsWith('6221307')) {
+          const po = ics['PO'] || "";
+          const nd = ics['ND'] || "";
+          const fr = ics['FR'] || "";
+          if ((po.startsWith('1013') || po === "") && (nd.startsWith('31') || nd.startsWith('339034'))) {
+            const elem = nd.substring(4, 6);
+            if (!['91', '92', '94'].includes(elem) && !fr.endsWith('604')) {
+              despPessoal += sinalD;
+            }
+          }
+        }
+      }
+    }
+
+    arquivosProcessados.push({
+      codigoSiconfi, periodo, recBruta, dedRcl,
+      rclMensal: recBruta - dedRcl, dedAjustePessoal, despPessoal,
+      impostos, transferencias, outrasRec
+    });
+  }
+
+  arquivosProcessados.sort((a, b) => a.periodo.localeCompare(b.periodo));
+  const ultimos12 = arquivosProcessados.slice(-12);
+  if (!ultimos12.length) return;
+
+  const cod = ultimos12[0].codigoSiconfi;
+  const infoOficial = OFICIAL_SICONFI[cod];
+  const nomeMunicipio = infoOficial ? infoOficial.nome : `Município Siconfi ${cod}`;
+
+  atualizarAuditoria(ultimos12.length, totalDebitos, totalCreditos, temValoresNegativos);
+  consolidarResultados(cod, nomeMunicipio, ultimos12);
+}
+
+function atualizarAuditoria(qtdMeses, debitos, creditos, negativos) {
+  const list = document.getElementById('auditList');
+  const diffPartidas = Math.abs(debitos - creditos);
+  list.innerHTML = `
+    <li class="audit-item ok">✅ <strong>Estrutura CSV & Delimitador (;):</strong> ${qtdMeses} arquivo(s) lido(s) conforme Leiaute Portaria STN nº 642.</li>
+    <li class="audit-item ${negativos ? 'warn' : 'ok'}">
+      ${negativos ? '⚠️' : '✅'} <strong>Verificação de Valores Negativos:</strong> ${negativos ? 'Encontrados valores negativos (atenção ao Ranking Siconfi).' : 'Nenhum valor negativo indevido encontrado.'}
+    </li>
+    <li class="audit-item ${diffPartidas < 1 ? 'ok' : 'warn'}">
+      ✅ <strong>Partidas Dobradas (Movimento):</strong> Débitos (${formatarMoeda(debitos)}) vs. Créditos (${formatarMoeda(creditos)}).
+    </li>
+  `;
 }
 
 async function consolidarResultados(codigoSiconfi, municipio, meses) {
@@ -288,9 +352,7 @@ async function consolidarResultados(codigoSiconfi, municipio, meses) {
   const percentual = rclAjustada > 0 ? (dtpTotal / rclAjustada) * 100 : 0;
 
   estadoGlobal = {
-    codigoSiconfi,
-    municipio,
-    meses,
+    codigoSiconfi, municipio, meses,
     totais: { rcl: rclTotal, rclAjustada, dtp: dtpTotal, percentual },
     composicaoReceita: {
       impostos: meses.reduce((acc, m) => acc + m.impostos, 0),
@@ -299,7 +361,6 @@ async function consolidarResultados(codigoSiconfi, municipio, meses) {
     }
   };
 
-  // Atualiza Interface
   document.getElementById('lblMunicipio').textContent = `${municipio} (${codigoSiconfi})`;
   document.getElementById('lblPeriodos').textContent = `${meses.length} meses (${meses[0].periodo} a ${meses[meses.length - 1].periodo})`;
 
@@ -337,9 +398,6 @@ function atualizarTermometroLRF(pct) {
   }
 }
 
-// =========================================================================
-// 4. GRÁFICOS INTERATIVOS (CHART.JS)
-// =========================================================================
 function renderizarGraficos() {
   const labels = estadoGlobal.meses.map(m => m.periodo);
   const dadosRcl = estadoGlobal.meses.map(m => m.rclMensal);
@@ -404,11 +462,7 @@ function renderizarGraficos() {
   });
 }
 
-// =========================================================================
-// 5. TABELAS, PROVA REAL E EXPORTAÇÃO EXCEL
-// =========================================================================
 function renderizarTabelas() {
-  // Tabela Mensal (Módulo 3)
   const tbodyMensal = document.getElementById('tbodyMensal');
   tbodyMensal.innerHTML = estadoGlobal.meses.map(m => {
     const pctMes = m.rclMensal > 0 ? (m.despPessoal / m.rclMensal) * 100 : 0;
@@ -424,7 +478,6 @@ function renderizarTabelas() {
     `;
   }).join('');
 
-  // Tabela Prova Real (Módulo 2)
   const tbodyProva = document.getElementById('tbodyProvaReal');
   const oficial = OFICIAL_SICONFI[estadoGlobal.codigoSiconfi];
   if (oficial) {
@@ -453,35 +506,11 @@ function renderizarTabelas() {
   }
 }
 
-function exportarExcel() {
-  if (!estadoGlobal.meses.length) {
-    alert("Importe os dados da MSC antes de exportar.");
-    return;
-  }
-  const dadosPlanilha = estadoGlobal.meses.map(m => ({
-    Codigo_Siconfi: m.codigoSiconfi,
-    Municipio: estadoGlobal.municipio,
-    Periodo: m.periodo,
-    Receita_Bruta: Number(m.recBruta.toFixed(2)),
-    Deducoes_RCL: Number(m.dedRcl.toFixed(2)),
-    RCL_Mensal: Number(m.rclMensal.toFixed(2)),
-    Despesa_Pessoal_Mensal: Number(m.despPessoal.toFixed(2))
-  }));
-
-  const ws = XLSX.utils.json_to_sheet(dadosPlanilha);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Apuracao_MSC_LRF");
-  XLSX.writeFile(wb, `Relatorio_Fiscal_${estadoGlobal.codigoSiconfi}.xlsx`);
-}
-
-// =========================================================================
-// 6. PERSISTÊNCIA NA NUVEM (SUPABASE)
-// =========================================================================
 async function salvarApuracaoSupabase() {
+  if (!supabaseClient) return;
   const statusEl = document.getElementById('lblSupabaseStatus');
-  statusEl.textContent = "Salvando...";
-
   const periodoFinal = estadoGlobal.meses[estadoGlobal.meses.length - 1].periodo;
+  
   const { error } = await supabaseClient.from('apuracoes').insert([{
     codigo_siconfi: estadoGlobal.codigoSiconfi,
     municipio: estadoGlobal.municipio,
@@ -491,40 +520,11 @@ async function salvarApuracaoSupabase() {
     percentual_dtp: Number(estadoGlobal.totais.percentual.toFixed(2))
   }]);
 
-  if (error) {
-    statusEl.textContent = "Salvo localmente (crie a tabela 'apuracoes' no Supabase)";
-    statusEl.style.color = "#ffd500";
-  } else {
+  if (!error) {
     statusEl.textContent = "Sincronizado na Nuvem ✔";
     statusEl.style.color = "#00e676";
     carregarHistoricoSupabase();
   }
-}
-
-async function carregarHistoricoSupabase() {
-  const tbody = document.getElementById('tbodySupabase');
-  const { data, error } = await supabaseClient
-    .from('apuracoes')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(10);
-
-  if (error || !data || !data.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="muted">Nenhum registro encontrado na nuvem ainda.</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = data.map(row => `
-    <tr>
-      <td>${new Date(row.created_at).toLocaleString('pt-BR')}</td>
-      <td>${row.codigo_siconfi}</td>
-      <td><strong>${row.municipio}</strong></td>
-      <td>${row.periodo_final}</td>
-      <td>${formatarMoeda(row.rcl)}</td>
-      <td>${formatarMoeda(row.dtp)}</td>
-      <td><strong>${Number(row.percentual_dtp).toFixed(2).replace('.', ',')}%</strong></td>
-    </tr>
-  `).join('');
 }
 
 function formatarMoeda(valor) {
