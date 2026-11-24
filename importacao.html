@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Importação & Auditoria — SIG Fiscal (UFRGS)</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .drop-area {
+      border: 1.5px dashed var(--border-strong);
+      border-radius: var(--radius-md);
+      background: var(--bg-page);
+      padding: 2.25rem 1.25rem;
+      text-align: center;
+      cursor: pointer;
+      display: block;
+      transition: border-color 0.15s, background-color 0.15s;
+    }
+    .drop-area:hover {
+      border-color: var(--brand-primary);
+      background: #eef3f3;
+    }
+    .audit-list {
+      list-style: none;
+      display: grid;
+      gap: 0.7rem;
+    }
+    .audit-row {
+      padding: 0.75rem 0.9rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      border-left: 3px solid var(--border-strong);
+      background: var(--bg-page);
+      font-size: 0.86rem;
+    }
+    .audit-row.ok { border-left-color: #15803d; background: #f4fbf6; }
+    .audit-row.warn { border-left-color: #b45309; background: #fffbeb; }
+    .audit-row.danger { border-left-color: #b91c1c; background: #fef2f2; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a href="importacao.html" class="brand-area">
+      <div class="brand-mark">SIG</div>
+      <div class="brand-text">
+        <strong>SIG Fiscal Municipal</strong>
+        <span>UFRGS • Contabilidade Pública</span>
+      </div>
+    </a>
+
+    <nav class="nav-links">
+      <a href="importacao.html" class="nav-link active">1. Importação e Auditoria</a>
+      <a href="painel.html" class="nav-link">2. Painel RCL e DTP</a>
+      <a href="relatorios.html" class="nav-link">3. Demonstrativos e Nuvem</a>
+    </nav>
+
+    <div class="topbar-right">
+      <span id="userPill" class="user-pill">Carregando...</span>
+      <button type="button" class="btn btn-ghost" onclick="AuthService.logout()">Sair</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div>
+        <h1>Módulo 1: Importação da MSC Agregada e Auditoria</h1>
+        <p>Carregue os 12 arquivos mensais (.csv) da Matriz de Saldos Contábeis do Siconfi para validação e cálculo.</p>
+      </div>
+      <a href="painel.html" id="btnIrPainel" class="btn btn-primary" style="display: none;">
+        Avançar para o Painel RCL & DTP &rarr;
+      </a>
+    </div>
+
+    <div id="statusMsg" class="alert-box"></div>
+
+    <div class="grid-2">
+      <!-- Upload CSV -->
+      <section class="card">
+        <h2 class="card-title">Seleção de Arquivos Mensais (.CSV)</h2>
+        <p class="card-subtitle">
+          Utilize apenas arquivos da <strong>MSC Agregada</strong> (mês de referência + 11 anteriores). Todos os códigos são lidos como texto para preservar zeros à esquerda.
+        </p>
+
+        <label for="csvInput" class="drop-area">
+          <strong style="display: block; font-size: 0.95rem; margin-bottom: 0.35rem;">
+            Clique para selecionar os 12 arquivos CSV da MSC
+          </strong>
+          <span style="font-size: 0.82rem; color: var(--text-muted);">
+            Delimitador ponto e vírgula (;) • Padrão decimal americano (.) • Múltipla seleção habilitada
+          </span>
+          <input type="file" id="csvInput" accept=".csv" multiple hidden />
+        </label>
+
+        <div style="margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color);">
+          <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+            <strong>Base de teste rápida (referência Siconfi):</strong> carregue um município de exemplo caso não esteja com os CSVs nesta máquina.
+          </p>
+          <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary" onclick="carregarDemo('4312476EX')">
+              Carregar Morro Reuter/RS
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="carregarDemo('4314423EX')">
+              Carregar Picada Café/RS
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Auditoria STN -->
+      <section class="card">
+        <h2 class="card-title">Auditoria Técnica de Consistência (STN)</h2>
+        <p class="card-subtitle">
+          Verificações automáticas sobre estrutura, partidas dobradas, movimentação (<code>period_change</code>) e tipo de matriz.
+        </p>
+
+        <ul id="auditList" class="audit-list">
+          <li class="audit-row">Nenhum arquivo processado ainda. Selecione os CSVs ao lado para iniciar a auditoria.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <span>SIG I & II • Faculdade de Ciências Econômicas — UFRGS</span>
+    <span>Dados públicos Siconfi/STN • Processamento local sem armazenamento de dados sensíveis</span>
+  </footer>
+
+  <script src="js/supabase-client.js"></script>
+  <script src="js/msc-engine.js"></script>
+  <script>
+    AuthService.preencherCabecalho();
+
+    const statusMsg = document.getElementById('statusMsg');
+    const auditList = document.getElementById('auditList');
+    const btnIrPainel = document.getElementById('btnIrPainel');
+
+    // Se já houver estado carregado na sessão, exibe imediatamente
+    const estadoAnterior = MscEngine.carregarEstado();
+    if (estadoAnterior) {
+      renderizarAuditoria(estadoAnterior);
+    }
+
+    document.getElementById('csvInput').addEventListener('change', async (e) => {
+      if (!e.target.files.length) return;
+      mostrarStatus('info', 'Processando arquivos CSV e aplicando regras da MSC...');
+      const estado = await MscEngine.processarArquivosCSV(e.target.files);
+      if (estado) {
+        mostrarStatus('info', `Processamento concluído: ${estado.municipio} (${estado.periodoInicial} a ${estado.periodoFinal}).`);
+        renderizarAuditoria(estado);
+      } else {
+        mostrarStatus('error', 'Não foi possível ler os arquivos selecionados. Verifique se são CSVs válidos da MSC.');
+      }
+    });
+
+    async function carregarDemo(cod) {
+      mostrarStatus('info', 'Carregando base de referência e sincronizando resumo com o Supabase...');
+      const estado = await MscEngine.carregarBaseDemo(cod);
+      if (estado) {
+        mostrarStatus('info', `Base carregada: ${estado.municipio} (${estado.periodoInicial} a ${estado.periodoFinal}).`);
+        renderizarAuditoria(estado);
+      }
+    }
+
+    function mostrarStatus(tipo, texto) {
+      statusMsg.className = `alert-box ${tipo}`;
+      statusMsg.textContent = texto;
+    }
+
+    function renderizarAuditoria(estado) {
+      const a = estado.auditoria;
+      btnIrPainel.style.display = 'inline-flex';
+
+      auditList.innerHTML = `
+        <li class="audit-row ${a.qtdMeses === 12 ? 'ok' : 'warn'}">
+          <strong>Janela Temporal (12 meses):</strong> ${a.qtdMeses} período(s) processado(s) (${estado.periodoInicial} a ${estado.periodoFinal}).
+          ${a.qtdMeses < 12 ? ' Atenção: RCL e DTP exigem 12 meses completos (mês de referência + 11 anteriores).' : ' Janela completa validada.'}
+        </li>
+        <li class="audit-row ${a.detectouEncerramento ? 'danger' : 'ok'}">
+          <strong>Tipo de Matriz (MSC Agregada):</strong> ${a.detectouEncerramento ? 'Atenção: detectado arquivo com indicativo de encerramento (-13). Utilize apenas MSC Agregada.' : 'Nenhum arquivo de encerramento detectado.'}
+        </li>
+        <li class="audit-row ok">
+          <strong>Integridade de Códigos e Decimais:</strong> ${a.totalLinhasLidas.toLocaleString('pt-BR')} registros lidos em formato americano (.) com preservação de zeros à esquerda como texto.
+        </li>
+        <li class="audit-row ${a.diffPartidas < 1 ? 'ok' : 'warn'}">
+          <strong>Partidas Dobradas (period_change):</strong> Débitos <span class="mono">${MscEngine.formatarMoeda(a.totalDebitos)}</span> vs. Créditos <span class="mono">${MscEngine.formatarMoeda(a.totalCreditos)}</span>.
+        </li>
+        <li class="audit-row ${a.temValoresNegativos ? 'warn' : 'ok'}">
+          <strong>Valores Negativos:</strong> ${a.temValoresNegativos ? 'Identificados valores negativos no arquivo (ponto de atenção no Ranking Siconfi).' : 'Nenhum valor negativo indevido encontrado.'}
+        </li>
+      `;
+    }
+  </script>
+</body>
+</html>

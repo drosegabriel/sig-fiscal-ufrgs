@@ -3,75 +3,111 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SIG Fiscal UFRGS — Gestão Pública & LRF</title>
-  <link rel="stylesheet" href="style.css" />
-  <!-- Bibliotecas Externas (Gráficos, Excel e Supabase) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <title>Acesso — SIG Fiscal Municipal (UFRGS)</title>
+  <link rel="stylesheet" href="css/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+  <div class="auth-layout">
+    <!-- Coluna Institucional -->
+    <aside class="auth-aside">
+      <div>
+        <div class="brand-mark" style="background: #ffffff; color: #0f3d3e; width: 42px; height: 42px;">SIG</div>
+        <h1>Análise Fiscal Municipal via Matriz de Saldos Contábeis</h1>
+        <p>
+          Ferramenta desenvolvida na Faculdade de Ciências Econômicas da UFRGS para processamento automatizado
+          da MSC Agregada (Siconfi), com apuração mensal da Receita Corrente Líquida (RCL) e da Despesa Total
+          com Pessoal (DTP) por Poder.
+        </p>
 
-  <!-- TELA DE LOGIN / ACESSO -->
-  <div id="loginOverlay" class="login-overlay">
-    <div class="rainbow-border-card login-box">
-      <div class="login-inner">
-        <div class="badge-ufrgs">UFRGS • FCE • SIG I & II</div>
-        <h1 class="gradient-text">SIG Fiscal Inteligente</h1>
-        <p class="subtitle">Análise Automatizada da Matriz de Saldos Contábeis (RCL & DTP)</p>
+        <ul class="spec-list">
+          <li><strong>Base de Dados:</strong> 12 arquivos mensais da MSC Agregada (.csv, padrão STN).</li>
+          <li><strong>Apuração Contábil:</strong> Movimentação (<code>period_change</code>), preservação de zeros à esquerda e formato decimal americano.</li>
+          <li><strong>Despesa com Pessoal:</strong> Visão Consolidada, Poder Executivo e Poder Legislativo (despesas liquidadas).</li>
+          <li><strong>Transparência:</strong> Utiliza exclusivamente dados públicos do Siconfi, sem dados pessoais sensíveis.</li>
+        </ul>
+      </div>
 
-        <form id="loginForm" class="login-form">
-          <input type="email" id="loginEmail" placeholder="E-mail institucional (Supabase)" required />
-          <input type="password" id="loginPassword" placeholder="Senha" required />
-          <button type="submit" class="btn-rainbow">Entrar com Credenciais</button>
+      <div style="font-size: 0.78rem; color: #9db6b6;">
+        UFRGS • Departamento de Ciências Contábeis e Atuariais • SIG I & II (2026)
+      </div>
+    </aside>
+
+    <!-- Coluna de Autenticação -->
+    <main class="auth-main">
+      <div class="auth-box">
+        <h2>Acessar o sistema</h2>
+        <p class="card-subtitle">Entre com seu usuário cadastrado no Supabase ou escolha um perfil de visualização.</p>
+
+        <div id="authAlert" class="alert-box"></div>
+
+        <form id="loginForm">
+          <div class="form-group">
+            <label for="email">E-mail institucional</label>
+            <input type="email" id="email" class="form-control" placeholder="nome@ufrgs.br" required />
+          </div>
+
+          <div class="form-group">
+            <label for="password">Senha</label>
+            <input type="password" id="password" class="form-control" placeholder="Digite sua senha" required />
+          </div>
+
+          <button type="submit" id="btnLogin" class="btn btn-primary" style="width: 100%;">
+            Entrar com credenciais
+          </button>
         </form>
-        <div id="loginError" class="error-msg"></div>
 
-        <div class="divider"><span>ou acesso rápido para demonstração</span></div>
+        <div class="auth-divider">ou acesso direto por perfil</div>
 
-        <div class="quick-roles">
-          <button type="button" onclick="entrarModoDemo('tecnico')" class="role-btn">
-            🛠️ Técnico Contábil
+        <div style="display: grid; gap: 0.6rem;">
+          <button type="button" class="btn btn-secondary" onclick="acessarPerfil('tecnico', 'importacao.html')">
+            Perfil Técnico Contábil (Importação e Auditoria)
           </button>
-          <button type="button" onclick="entrarModoDemo('secretario')" class="role-btn">
-            📊 Secretário / Gestor
+          <button type="button" class="btn btn-secondary" onclick="acessarPerfil('gestor', 'painel.html')">
+            Perfil Gestor / Secretário (Painel RCL e DTP)
           </button>
-          <button type="button" onclick="entrarModoDemo('cidadao')" class="role-btn">
-            🏛️ Cidadão (Transparência)
+          <button type="button" class="btn btn-ghost" onclick="acessarPerfil('cidadao', 'relatorios.html')">
+            Perfil Cidadão (Demonstrativos e Transparência)
           </button>
         </div>
+
+        <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border-color); font-size: 0.76rem; color: var(--text-muted);">
+          <strong>Aviso Legal e Privacidade:</strong> Este sistema acadêmico processa arquivos CSV públicos da Matriz de Saldos Contábeis (STN/Siconfi) localmente no navegador. Apenas os totais agregados das apurações são gravados no banco de dados com políticas de segurança (RLS).
+        </div>
       </div>
-    </div>
+    </main>
   </div>
 
-  <!-- SISTEMA PRINCIPAL -->
-  <div id="appContainer" class="app-container hidden">
-    
-    <!-- CABEÇALHO -->
-    <header class="topbar">
-      <div class="brand">
-        <div class="logo-orb"></div>
-        <div>
-          <h2>O Desafio: Gestão Fiscal & Decisão <span class="tag-pill">UFRGS</span></h2>
-          <small>Sistemas de Informações Gerenciais • Contabilidade Pública</small>
-        </div>
-      </div>
+  <script src="js/supabase-client.js"></script>
+  <script>
+    const form = document.getElementById('loginForm');
+    const alertBox = document.getElementById('authAlert');
+    const btnLogin = document.getElementById('btnLogin');
 
-      <nav class="nav-tabs">
-        <button class="tab-btn active" data-tab="mod1" id="navMod1">Módulo 1: Importação & Auditoria</button>
-        <button class="tab-btn" data-tab="mod2" id="navMod2">Módulo 2: Painel RCL & DTP</button>
-        <button class="tab-btn" data-tab="mod3" id="navMod3">Módulo 3: Relatórios & Exportação</button>
-      </nav>
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value.trim();
 
-      <div class="user-controls">
-        <select id="roleSwitcher" title="Alternar visão de perfil">
-          <option value="tecnico">Perfil: Técnico Contábil</option>
-          <option value="secretario">Perfil: Secretário / Gestor</option>
-          <option value="cidadao">Perfil: Cidadão (Controle Social)</option>
-        </select>
-        <button onclick="sairSistema()" class="btn-outline">Sair</button>
-      </div>
-    </header>
+      alertBox.className = 'alert-box info';
+      alertBox.textContent = 'Validando credenciais no Supabase...';
+      btnLogin.disabled = true;
 
-    <!-- BANNER DE CONTEXTO DO MUNICÍPIO ATIVO -->
-    <section class
+      const { error } = await window.AuthService.login(email, password);
+      btnLogin.disabled = false;
+
+      if (error) {
+        alertBox.className = 'alert-box error';
+        alertBox.textContent = 'Não foi possível autenticar: ' + error.message;
+      } else {
+        window.location.href = 'importacao.html';
+      }
+    });
+
+    function acessarPerfil(perfil, destino) {
+      window.AuthService.entrarDemo(perfil);
+      window.location.href = destino;
+    }
+  </script>
+</body>
+</html>
