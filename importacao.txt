@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Importação & Auditoria — SIG Fiscal (UFRGS)</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    .audit-list { list-style: none; display: grid; gap: 0.65rem; }
+    .audit-row {
+      padding: 0.7rem 0.9rem; border-radius: 8px; border: 1.5px solid #264143;
+      border-left: 5px solid #64748b; background: #fff; font-size: 0.85rem;
+    }
+    .audit-row.ok { border-left-color: #16a34a; background: #f0fdf4; }
+    .audit-row.warn { border-left-color: #d97706; background: #fffbeb; }
+    .audit-row.danger { border-left-color: #dc2626; background: #fef2f2; }
+  </style>
+</head>
+<body>
+  <header class="topbar-galaxy">
+    <div id="stars"></div><div id="stars2"></div><div id="stars3"></div>
+    <a href="importacao.html" class="brand-area">
+      <div class="brand-mark">SIG</div>
+      <div class="brand-text">
+        <strong>SIG Fiscal Municipal</strong>
+        <span>UFRGS • Contabilidade Pública</span>
+      </div>
+    </a>
+    <nav class="nav-links">
+      <a href="importacao.html" class="nav-link active">1. Importação e Auditoria</a>
+      <a href="painel.html" class="nav-link">2. Painel RCL e DTP</a>
+      <a href="relatorios.html" class="nav-link">3. Demonstrativos e Nuvem</a>
+    </nav>
+    <div class="topbar-right">
+      <span id="userPill" class="user-pill">Carregando...</span>
+      <button type="button" class="btn-std galaxy-out" onclick="AuthService.logout()">Sair</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div>
+        <h1>Módulo 1: Importação da MSC Agregada (.CSV ou .ZIP)</h1>
+        <p>Selecione os 12 arquivos mensais da MSC (ou pacotes .ZIP direto do Siconfi) para auditoria e cálculo oficial.</p>
+      </div>
+
+      <!-- BOTÃO ANIMADO NEXT (next.txt) -->
+      <a href="painel.html" id="btnIrPainel" class="next-button" style="display: none;">
+        <span>AVANÇAR</span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 66 43">
+          <polygon points="39.58,4.46 44.11,0 66,21.5 44.11,43 39.58,38.54 56.94,21.5"></polygon>
+          <polygon points="19.79,4.46 24.32,0 46.21,21.5 24.32,43 19.79,38.54 37.15,21.5"></polygon>
+          <polygon points="0,4.46 4.53,0 26.42,21.5 4.53,43 0,38.54 17.36,21.5"></polygon>
+        </svg>
+      </a>
+    </div>
+
+    <div id="statusMsg" class="alert-box"></div>
+
+    <div class="grid-2">
+      <!-- CARD DE UPLOAD COM BAÚ 3D MINECRAFT (caixa de texto.txt) -->
+      <section class="card">
+        <h2 class="card-title">Baú de Importação MSC (CSV / ZIP)</h2>
+        <p class="card-subtitle">
+          Passe o mouse e clique no baú para selecionar os <strong>12 arquivos .csv</strong> ou <strong>arquivos .zip</strong>. Zeros à esquerda são preservados como texto.
+        </p>
+
+        <div class="mc-environment">
+          <div class="mc-chest-wrapper">
+            <input type="file" id="csvInput" class="mc-file-input" accept=".csv,.zip" multiple />
+            <div class="mc-chest">
+              <div class="chest-part chest-base">
+                <div class="c-face base-front"></div><div class="c-face base-back"></div>
+                <div class="c-face base-left"></div><div class="c-face base-right"></div>
+                <div class="c-face base-top"></div><div class="c-face base-bottom"></div>
+              </div>
+              <div class="chest-part chest-lid">
+                <div class="c-face lid-front"></div><div class="c-face lid-back"></div>
+                <div class="c-face lid-left"></div><div class="c-face lid-right"></div>
+                <div class="c-face lid-top"></div><div class="c-face lid-bottom"></div>
+                <div class="mc-latch"><div class="latch-f latch-front"></div></div>
+              </div>
+            </div>
+            <div id="mc-text" class="mc-chest-text">SELECIONAR MSC (.CSV / .ZIP)</div>
+          </div>
+        </div>
+
+        <!-- SWITCH ON/OFF (ativa.txt) -->
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.85rem; background: #EDDCD9; border: 2px solid #264143; border-radius: 10px; margin-top: 0.5rem;">
+          <div>
+            <strong style="font-size: 0.86rem; color: #264143;">Salvar automaticamente no Supabase</strong>
+            <div style="font-size: 0.76rem; color: #475569;">Desative para evitar duplicatas durante testes rápidos.</div>
+          </div>
+          <label class="neo-switch">
+            <input id="chkAutoSave" type="checkbox" class="toggle" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1.5px dashed #94a3b8;">
+          <p style="font-size: 0.82rem; color: var(--ink-soft); margin-bottom: 0.65rem;">
+            <strong>Carregamento rápido de demonstração</strong> (não cria duplicatas no Supabase):
+          </p>
+          <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+            <button type="button" class="btn-std" onclick="carregarDemo('4312476EX')">Demo: Morro Reuter/RS</button>
+            <button type="button" class="btn-std" onclick="carregarDemo('4314423EX')">Demo: Picada Café/RS</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- CARD DE AUDITORIA COM PRISMA 3D E FANTASMA PAC-MAN -->
+      <section class="card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+          <div>
+            <h2 class="card-title">Auditoria de Consistência (STN 2026)</h2>
+            <p class="card-subtitle">Validação de partidas dobradas, <code>period_change</code>, zeros à esquerda e <code>PO</code> obrigatório.</p>
+          </div>
+          <!-- FANTASMA PAC-MAN (pac man.txt) -->
+          <div id="ghost" title="Auditor Fantasma caçando inconsistências na MSC">
+            <div id="red">
+              <div id="pupil"></div><div id="pupil1"></div>
+              <div id="eye"></div><div id="eye1"></div>
+              <div id="top0"></div><div id="top1"></div><div id="top2"></div><div id="top3"></div><div id="top4"></div>
+              <div id="st0"></div><div id="st1"></div><div id="st2"></div><div id="st3"></div><div id="st4"></div><div id="st5"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PRISMA 3D CARREGANDO (prisma carregando.txt) -->
+        <div id="loaderBox" style="display: none; text-align: center; padding: 1.5rem 0;">
+          <div class="pyramid-loader">
+            <div class="wrapper">
+              <span class="side side1"></span><span class="side side2"></span>
+              <span class="side side3"></span><span class="side side4"></span>
+              <span class="shadow"></span>
+            </div>
+          </div>
+          <p style="font-size: 0.85rem; font-weight: 700; color: var(--brand); margin-top: 0.5rem;">
+            Processando matrizes e aplicando regras da STN...
+          </p>
+        </div>
+
+        <ul id="auditList" class="audit-list">
+          <li class="audit-row">Nenhum arquivo carregado ainda. Clique no baú ao lado para importar os CSVs ou ZIPs.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <span>SIG I & II • Faculdade de Ciências Econômicas — UFRGS</span>
+    <span>Mapeamentos oficiais: Anexo 3 RREO (RCL) & Anexo 1 RGF (DTP)</span>
+  </footer>
+
+  <script src="js/supabase-client.js"></script>
+  <script src="js/msc-engine.js"></script>
+  <script>
+    AuthService.preencherCabecalho();
+    const statusMsg = document.getElementById('statusMsg');
+    const auditList = document.getElementById('auditList');
+    const loaderBox = document.getElementById('loaderBox');
+    const btnIrPainel = document.getElementById('btnIrPainel');
+    const mcText = document.getElementById('mc-text');
+
+    const anterior = MscEngine.carregarEstado();
+    if (anterior) renderizarAuditoria(anterior);
+
+    document.getElementById('csvInput').addEventListener('change', async (e) => {
+      if (!e.target.files.length) return;
+      mcText.textContent = `${e.target.files.length} ARQUIVO(S) SELECIONADO(S)`;
+      loaderBox.style.display = 'block';
+      auditList.style.display = 'none';
+      mostrarStatus('info', 'Lendo arquivos (.CSV / .ZIP) e executando motor contábil da STN...');
+
+      const salvarNuvem = document.getElementById('chkAutoSave').checked;
+      const estado = await MscEngine.processarArquivos(e.target.files, salvarNuvem);
+      loaderBox.style.display = 'none';
+      auditList.style.display = 'grid';
+
+      if (estado) {
+        mostrarStatus('ok', `Processamento concluído: ${estado.municipio} (${estado.periodoInicial} a ${estado.periodoFinal}).`);
+        renderizarAuditoria(estado);
+      } else {
+        mostrarStatus('error', 'Nenhum CSV válido da MSC encontrado nos arquivos selecionados.');
+      }
+    });
+
+    async function carregarDemo(cod) {
+      loaderBox.style.display = 'block';
+      auditList.style.display = 'none';
+      const estado = await MscEngine.carregarBaseDemo(cod, false);
+      loaderBox.style.display = 'none';
+      auditList.style.display = 'grid';
+      if (estado) {
+        mostrarStatus('ok', `Base demo carregada: ${estado.municipio} (não duplicada no Supabase).`);
+        renderizarAuditoria(estado);
+      }
+    }
+
+    function mostrarStatus(tipo, texto) {
+      statusMsg.className = `alert-box ${tipo}`;
+      statusMsg.textContent = texto;
+    }
+
+    function renderizarAuditoria(estado) {
+      const a = estado.auditoria;
+      btnIrPainel.style.display = 'inline-flex';
+      auditList.innerHTML = `
+        <li class="audit-row ${a.qtdMeses === 12 ? 'ok' : 'warn'}">
+          <strong>Janela Temporal (12 meses):</strong> ${a.qtdMeses} período(s) (${estado.periodoInicial} a ${estado.periodoFinal}).
+          ${a.qtdMeses < 12 ? 'Atenção: RCL/DTP exigem 12 meses completos.' : 'Janela completa validada.'}
+        </li>
+        <li class="audit-row ${a.detectouEncerramento ? 'danger' : 'ok'}">
+          <strong>MSC Agregada:</strong> ${a.detectouEncerramento ? 'Detectado arquivo de encerramento (-13). Use apenas MSC Agregada.' : 'Somente MSC Agregada mensal detectada.'}
+        </li>
+        <li class="audit-row ${a.faltouPO ? 'warn' : 'ok'}">
+          <strong>Códigos PO & Zeros à Esquerda:</strong> ${a.totalLinhasLidas.toLocaleString('pt-BR')} linhas lidas como texto (padrão decimal americano convertido).
+        </li>
+        <li class="audit-row ${a.diffPartidas < 1 ? 'ok' : 'warn'}">
+          <strong>Partidas Dobradas (period_change):</strong> Débitos <span class="mono">${MscEngine.formatarMoeda(a.totalDebitos)}</span> vs. Créditos <span class="mono">${MscEngine.formatarMoeda(a.totalCreditos)}</span>.
+        </li>
+        <li class="audit-row ${a.temValoresNegativos ? 'warn' : 'ok'}">
+          <strong>Valores Negativos:</strong> ${a.temValoresNegativos ? 'Valores negativos encontrados (alerta Ranking Siconfi).' : 'Nenhum valor negativo indevido.'}
+        </li>
+      `;
+    }
+  </script>
+</body>
+</html>

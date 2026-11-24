@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel RCL e DTP — SIG Fiscal (UFRGS)</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .kpi-label { font-size: 0.76rem; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi-value { font-size: 1.38rem; font-weight: 700; color: #0f172a; margin: 0.4rem 0 0.25rem; }
+    .kpi-note { font-size: 0.77rem; color: var(--ink-muted); }
+  </style>
+</head>
+<body>
+  <header class="topbar-galaxy">
+    <div id="stars"></div><div id="stars2"></div><div id="stars3"></div>
+    <a href="importacao.html" class="brand-area">
+      <div class="brand-mark">SIG</div>
+      <div class="brand-text">
+        <strong>SIG Fiscal Municipal</strong>
+        <span>UFRGS • Contabilidade Pública</span>
+      </div>
+    </a>
+    <nav class="nav-links">
+      <a href="importacao.html" class="nav-link">1. Importação e Auditoria</a>
+      <a href="painel.html" class="nav-link active">2. Painel RCL e DTP</a>
+      <a href="relatorios.html" class="nav-link">3. Demonstrativos e Nuvem</a>
+    </nav>
+    <div class="topbar-right">
+      <span id="userPill" class="user-pill">Carregando...</span>
+      <button type="button" class="btn-std galaxy-out" onclick="AuthService.logout()">Sair</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div>
+        <h1 id="tituloMunicipio">Módulo 2: Painel Gerencial (RCL & DTP)</h1>
+        <p id="subtituloPeriodo">Carregue uma base no Módulo 1 para visualizar os indicadores fiscais.</p>
+      </div>
+
+      <div style="display: flex; gap: 0.65rem; flex-wrap: wrap; align-items: center;" class="no-print">
+        <!-- BOTÃO FAVORITOS (favoritos.txt) -->
+        <div class="fav-wrap" id="favBoxPainel" style="display: none;">
+          <input type="checkbox" id="favAtual" />
+          <label for="favAtual">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            <div class="action">
+              <span class="option-1">Favoritar Análise</span>
+              <span class="option-2">Nos Favoritos</span>
+            </div>
+          </label>
+        </div>
+
+        <button type="button" class="btn-std primary" onclick="window.print()">Imprimir / PDF</button>
+
+        <a href="relatorios.html" class="next-button">
+          <span>RELATÓRIOS</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 66 43">
+            <polygon points="39.58,4.46 44.11,0 66,21.5 44.11,43 39.58,38.54 56.94,21.5"></polygon>
+            <polygon points="19.79,4.46 24.32,0 46.21,21.5 24.32,43 19.79,38.54 37.15,21.5"></polygon>
+            <polygon points="0,4.46 4.53,0 26.42,21.5 4.53,43 0,38.54 17.36,21.5"></polygon>
+          </svg>
+        </a>
+      </div>
+    </div>
+
+    <div id="emptyState" class="card" style="display: none; text-align: center; padding: 2.5rem;">
+      <h2 class="card-title">Nenhuma Matriz de Saldos Contábeis carregada</h2>
+      <p class="card-subtitle">Importe os 12 arquivos CSV/ZIP no Módulo 1 ou abra uma base de demonstração.</p>
+      <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+        <a href="importacao.html" class="btn-std primary">Ir para Importação</a>
+        <button type="button" class="btn-std" onclick="carregarDemoRapido('4312476EX')">Carregar Morro Reuter/RS</button>
+      </div>
+    </div>
+
+    <div id="dashboardContent" style="display: none;">
+      <!-- FILTRO DE PODERES COM MULTI CHECKBOX (multi checkbox.txt) -->
+      <section class="card no-print" style="margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <strong style="font-size: 0.9rem; color: var(--brand);">Filtrar Poderes na DTP (LRF art. 20):</strong>
+          <div style="font-size: 0.76rem; color: var(--ink-muted);">
+            Nota: a <strong>RCL é única do Município</strong> (base legal comum); os checkboxes abaixo ajustam a DTP, os limites e os gráficos.
+          </div>
+        </div>
+        <form class="my-form" id="formPoderes">
+          <div><input id="chkExec" type="checkbox" checked /><label for="chkExec">Executivo (54%)</label></div>
+          <div><input id="chkLeg" type="checkbox" checked /><label for="chkLeg">Legislativo (6%)</label></div>
+          <div><input id="chkJud" type="checkbox" /><label for="chkJud">Judiciário (N/A Mun.)</label></div>
+        </form>
+      </section>
+
+      <!-- 4 KPIs -->
+      <section class="grid-4" style="margin-bottom: 1.25rem;">
+        <div class="card">
+          <div class="kpi-label">Receita Corrente Líquida (12M)</div>
+          <div class="kpi-value" id="kpiRcl">R$ 0,00</div>
+          <div class="kpi-note">Única do Município (Anexo 3 RREO)</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">RCL Ajustada p/ Pessoal (IX)</div>
+          <div class="kpi-value" id="kpiRclAjustada">R$ 0,00</div>
+          <div class="kpi-note" id="lblDedAjuste">Deduzidas emendas (CO) e ACS (FR 604)</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label" id="lblDtpTitulo">DTP Selecionada (Liquidadas)</div>
+          <div class="kpi-value" id="kpiDtp">R$ 0,00</div>
+          <div class="kpi-note" id="lblDtpNota">Somente despesas executadas/liquidadas</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Relação DLP / RCL Ajustada</div>
+          <div class="kpi-value" id="kpiPct">0,00%</div>
+          <div id="badgeLimite"></div>
+        </div>
+      </section>
+
+      <!-- QUADRO COMPARATIVO DOS PODERES -->
+      <section class="card" style="margin-bottom: 1.25rem;">
+        <h2 class="card-title">Despesa Líquida com Pessoal por Poder (Executadas / Liquidadas — 12M)</h2>
+        <p class="card-subtitle">Abertura oficial por <code>PO</code> municipal: Prefeitura/RPPS (<code>10131</code>/<code>10132</code>) e Câmara Municipal (<code>20231</code>).</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Esfera / Poder</th>
+                <th>Código PO (MSC)</th>
+                <th class="num">DLP Executada (12M)</th>
+                <th class="num">% sobre RCL Ajustada</th>
+                <th class="num">Limite Máximo LRF</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyPoderes"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- GRÁFICOS: EVOLUÇÃO MENSAL + PIZZA/ROSCA DINÂMICA -->
+      <section class="grid-2" style="margin-bottom: 1.25rem;">
+        <div class="card">
+          <h2 class="card-title">Evolução Mensal: RCL vs. DTP &amp; % DLP/RCL</h2>
+          <p class="card-subtitle">Barras mensais (R$) com linha de comprometimento percentual (<code>% DLP/RCL</code>).</p>
+          <div class="chart-box"><canvas id="chartEvolucao"></canvas></div>
+        </div>
+        <div class="card">
+          <h2 class="card-title" id="tituloPizza">Composição das Receitas Correntes (12M)</h2>
+          <p class="card-subtitle" id="subPizza">Atualiza conforme os Poderes selecionados (valores em R$ e % no cursor).</p>
+          <div class="chart-box"><canvas id="chartComposicao"></canvas></div>
+        </div>
+      </section>
+
+      <!-- PARECER TÉCNICO (notas.txt) + PROVA REAL SICONFI (chekcbox risco.txt) -->
+      <section class="grid-2">
+        <div class="notes-card">
+          <div class="chat-header">Parecer Técnico &amp; Anotações da Análise (Supabase)</div>
+          <div class="chat-window">
+            <ul class="message-list" id="listaNotas">
+              <li><em>Adicione observações qualitativas sobre este município para salvar no banco.</em></li>
+            </ul>
+          </div>
+          <div class="chat-input">
+            <input type="text" id="inputNota" class="message-input" placeholder="Ex.: Folha do Executivo abaixo do limite de alerta..." />
+            <button type="button" class="send-button" onclick="adicionarNota()">Salvar Nota</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <h2 class="card-title" style="margin: 0;">Prova Real Siconfi</h2>
+            <!-- CHECKBOX RISCO À MÃO (chekcbox risco.txt) -->
+            <div class="checkbox-wrapper no-print">
+              <input checked type="checkbox" class="check" id="chkProvaReal" />
+              <label for="chkProvaReal" class="label">
+                <svg width="34" height="34" viewBox="0 0 95 95">
+                  <rect x="30" y="20" width="50" height="50" stroke="#264143" stroke-width="4" fill="none"></rect>
+                  <g transform="translate(0,-952.36222)">
+                    <path d="m 56,963 c -102,122 6,9 7,9 17,-5 -66,69 -38,52 122,-77 -7,14 18,4 29,-11 45,-43 23,-4" stroke="#DE5499" stroke-width="5" fill="none" class="path1"></path>
+                  </g>
+                </svg>
+                <span>Exibir Comparativo</span>
+              </label>
+            </div>
+          </div>
+          <div id="wrapProvaReal" class="table-wrap" style="margin-top: 0.75rem;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Indicador (12M)</th>
+                  <th class="num">Sistema (MSC)</th>
+                  <th class="num">Siconfi</th>
+                  <th class="num">Diferença</th>
+                </tr>
+              </thead>
+              <tbody id="tbodyProvaReal"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <span>SIG I & II • Faculdade de Ciências Econômicas — UFRGS</span>
+    <!-- EASTER EGG MARIO (cogumelo mario.txt) -->
+    <div class="mario-easter-egg" title="Dica LRF: Limite Máximo Municipal = 60% (54% Executivo + 6% Legislativo)">
+      <div class="mario-mush">🍄</div>
+      <div class="mario-qbox">?</div>
+      <span style="font-size: 0.78rem; font-weight: 700; color: var(--brand);">Dica LRF (passe o mouse)</span>
+    </div>
+  </footer>
+
+  <script src="js/supabase-client.js"></script>
+  <script src="js/msc-engine.js"></script>
+  <script>
+    AuthService.preencherCabecalho();
+    let estadoAtual = MscEngine.carregarEstado();
+    let chartEvolucao = null, chartComposicao = null;
+    const notasLocais = [];
+
+    ['chkExec', 'chkLeg', 'chkJud'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => {
+        if (estadoAtual) renderizarPainel();
+      });
+    });
+
+    document.getElementById('chkProvaReal').addEventListener('change', (e) => {
+      document.getElementById('wrapProvaReal').style.display = e.target.checked ? 'block' : 'none';
+    });
+
+    document.getElementById('favAtual').addEventListener('change', async (e) => {
+      if (!estadoAtual) return;
+      const marcado = e.target.checked;
+      if (estadoAtual.cloudId) {
+        await CloudRepo.alternarFavorito(estadoAtual.cloudId, marcado);
+      } else {
+        const res = await CloudRepo.salvarApuracao(estadoAtual, notasLocais.join(' | '), marcado);
+        if (res.data) { estadoAtual.cloudId = res.data.id; MscEngine.salvarEstado(estadoAtual); }
+      }
+    });
+
+    if (estadoAtual) renderizarPainel();
+    else document.getElementById('emptyState').style.display = 'block';
+
+    async function carregarDemoRapido(cod) {
+      estadoAtual = await MscEngine.carregarBaseDemo(cod, false);
+      document.getElementById('emptyState').style.display = 'none';
+      renderizarPainel();
+    }
+
+    async function adicionarNota() {
+      const inp = document.getElementById('inputNota');
+      const txt = inp.value.trim();
+      if (!txt || !estadoAtual) return;
+      notasLocais.push(txt);
+      inp.value = '';
+
+      const ul = document.getElementById('listaNotas');
+      ul.innerHTML = notasLocais.map(n => `<li><strong>Parecer:</strong> ${n}</li>`).join('');
+
+      const fav = document.getElementById('favAtual').checked;
+      const res = await CloudRepo.salvarApuracao(estadoAtual, notasLocais.join(' | '), fav);
+      if (res.data) { estadoAtual.cloudId = res.data.id; MscEngine.salvarEstado(estadoAtual); }
+    }
+
+    function renderizarPainel() {
+      document.getElementById('dashboardContent').style.display = 'block';
+      document.getElementById('favBoxPainel').style.display = 'inline-block';
+      document.getElementById('tituloMunicipio').textContent = `${estadoAtual.municipio} (${estadoAtual.codigoSiconfi})`;
+      document.getElementById('subtituloPeriodo').textContent =
+        `Janela de 12 meses: ${estadoAtual.periodoInicial} a ${estadoAtual.periodoFinal} (MSC Agregada — period_change)`;
+
+      const incExec = document.getElementById('chkExec').checked;
+      const incLeg = document.getElementById('chkLeg').checked;
+      const incJud = document.getElementById('chkJud').checked;
+
+      const t = estadoAtual.totais;
+      document.getElementById('kpiRcl').textContent = MscEngine.formatarMoeda(t.rcl);
+      document.getElementById('kpiRclAjustada').textContent = MscEngine.formatarMoeda(t.rclAjustada);
+      document.getElementById('lblDedAjuste').textContent = t.dedAjuste > 0
+        ? `Deduções emendas/ACS: ${MscEngine.formatarMoeda(t.dedAjuste)}`
+        : 'Base legal única do Município (RREO Anexo 3)';
+
+      let valorDtp = (incExec ? t.dtpExecutivo : 0) + (incLeg ? t.dtpLegislativo : 0) + (incJud ? t.dtpJudiciario : 0);
+      let limiteMax = (incExec ? 54 : 0) + (incLeg ? 6 : 0);
+      if (limiteMax === 0) limiteMax = 60;
+
+      const pctDtp = t.rclAjustada > 0 ? (valorDtp / t.rclAjustada) * 100 : 0;
+      const nomesPoderes = [];
+      if (incExec) nomesPoderes.push('Executivo');
+      if (incLeg) nomesPoderes.push('Legislativo');
+      if (incJud) nomesPoderes.push('Judiciário');
+
+      document.getElementById('lblDtpTitulo').textContent = `DLP — ${nomesPoderes.join(' + ') || 'Nenhum'}`;
+      document.getElementById('lblDtpNota').textContent = incJud && !incExec && !incLeg
+        ? 'Municípios não possuem Poder Judiciário (art. 20 LRF)'
+        : 'Despesas executadas/liquidadas (sem Restos a Pagar)';
+      document.getElementById('kpiDtp').textContent = MscEngine.formatarMoeda(valorDtp);
+      document.getElementById('kpiPct').textContent = MscEngine.formatarPct(pctDtp);
+
+      const badge = document.getElementById('badgeLimite');
+      if (pctDtp >= limiteMax) badge.innerHTML = `<span class="badge badge-danger">Acima do Máximo (${limiteMax}%)</span>`;
+      else if (pctDtp >= limiteMax * 0.95) badge.innerHTML = `<span class="badge badge-warn">Prudencial (&ge; ${(limiteMax*0.95).toFixed(1)}%)</span>`;
+      else if (pctDtp >= limiteMax * 0.90) badge.innerHTML = `<span class="badge badge-warn">Alerta (&ge; ${(limiteMax*0.90).toFixed(1)}%)</span>`;
+      else badge.innerHTML = `<span class="badge badge-ok">Regular (&lt; ${(limiteMax*0.90).toFixed(1)}%)</span>`;
+
+      document.getElementById('tbodyPoderes').innerHTML = `
+        <tr><td><strong>Poder Executivo</strong></td><td class="mono">10131 / 10132</td><td class="num">${MscEngine.formatarMoeda(t.dtpExecutivo)}</td><td class="num">${MscEngine.formatarPct(t.pctExecutivo)}</td><td class="num">54,00%</td></tr>
+        <tr><td><strong>Poder Legislativo</strong></td><td class="mono">20231</td><td class="num">${MscEngine.formatarMoeda(t.dtpLegislativo)}</td><td class="num">${MscEngine.formatarPct(t.pctLegislativo)}</td><td class="num">6,00%</td></tr>
+        <tr><td><strong>Poder Judiciário</strong></td><td class="mono">303XX (N/A Mun.)</td><td class="num">${MscEngine.formatarMoeda(t.dtpJudiciario)}</td><td class="num">${MscEngine.formatarPct(t.pctJudiciario)}</td><td class="num">N/A</td></tr>
+        <tr style="background:#EDDCD9; font-weight:700;"><td>Total Consolidado</td><td class="mono">Município</td><td class="num">${MscEngine.formatarMoeda(t.dtpConsolidado)}</td><td class="num">${MscEngine.formatarPct(t.pctConsolidado)}</td><td class="num">60,00%</td></tr>
+      `;
+
+      renderizarGraficos(incExec, incLeg, incJud);
+      renderizarProvaReal();
+    }
+
+    function renderizarGraficos(incExec, incLeg, incJud) {
+      const labels = estadoAtual.meses.map(m => m.periodo);
+      const dadosRcl = estadoAtual.meses.map(m => m.rclMensal);
+      const dadosDtp = estadoAtual.meses.map(m =>
+        (incExec ? m.dtpExecutivo : 0) + (incLeg ? m.dtpLegislativo : 0) + (incJud ? (m.dtpJudiciario || 0) : 0)
+      );
+      const dadosPct = estadoAtual.meses.map((m, i) => m.rclMensal > 0 ? Number(((dadosDtp[i] / m.rclMensal) * 100).toFixed(2)) : 0);
+
+      if (chartEvolucao) chartEvolucao.destroy();
+      chartEvolucao = new Chart(document.getElementById('chartEvolucao'), {
+        data: {
+          labels,
+          datasets: [
+            { type: 'bar', label: 'RCL Mensal (R$)', data: dadosRcl, backgroundColor: '#264143', borderRadius: 4, yAxisID: 'y' },
+            { type: 'bar', label: 'DLP Selecionada (R$)', data: dadosDtp, backgroundColor: '#DE5499', borderRadius: 4, yAxisID: 'y' },
+            { type: 'line', label: '% DLP / RCL (Mês)', data: dadosPct, borderColor: '#E99F4C', backgroundColor: '#E99F4C', borderWidth: 3, tension: 0.3, yAxisID: 'y1' }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            y: { position: 'left', beginAtZero: true },
+            y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+          }
+        }
+      });
+
+      // GRÁFICO DE ROSCA DINÂMICO POR PODER (com R$ e % no tooltip)
+      let pieLabels, pieData, pieColors;
+      if (incLeg && !incExec) {
+        document.getElementById('tituloPizza').textContent = 'Participação do Legislativo na DTP Total (12M)';
+        document.getElementById('subPizza').textContent = 'Câmara Municipal (PO 20231) frente ao restante da folha municipal.';
+        pieLabels = ['Poder Legislativo (PO 20231)', 'Demais Poderes (Executivo)'];
+        pieData = [estadoAtual.totais.dtpLegislativo, estadoAtual.totais.dtpExecutivo];
+        pieColors = ['#DE5499', '#cbd5e1'];
+      } else if (incExec && !incLeg) {
+        document.getElementById('tituloPizza').textContent = 'Executivo: Folha vs. Margem Livre da RCL (12M)';
+        document.getElementById('subPizza').textContent = 'Parcela da RCL Ajustada comprometida pelo Poder Executivo.';
+        const livre = Math.max(0, estadoAtual.totais.rclAjustada - estadoAtual.totais.dtpExecutivo);
+        pieLabels = ['DLP Poder Executivo', 'Demais Recursos da RCL'];
+        pieData = [estadoAtual.totais.dtpExecutivo, livre];
+        pieColors = ['#264143', '#E99F4C'];
+      } else {
+        document.getElementById('tituloPizza').textContent = 'Composição das Receitas Correntes (12M)';
+        document.getElementById('subPizza').textContent = 'Distribuição oficial por Natureza da Receita (NR 11, NR 17 e Outras).';
+        const c = estadoAtual.composicaoReceita;
+        pieLabels = ['Impostos e Taxas (NR 11)', 'Transferências Correntes (NR 17)', 'Outras Receitas Correntes'];
+        pieData = [c.impostos, c.transferencias, c.outras];
+        pieColors = ['#264143', '#DE5499', '#E99F4C'];
+      }
+
+      const somaPie = pieData.reduce((a, b) => a + Math.abs(b), 0) || 1;
+      if (chartComposicao) chartComposicao.destroy();
+      chartComposicao = new Chart(document.getElementById('chartComposicao'), {
+        type: 'doughnut',
+        data: { labels: pieLabels, datasets: [{ data: pieData, backgroundColor: pieColors, borderColor: '#fff', borderWidth: 3 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          layout: { padding: { bottom: 12 } },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 14, padding: 14 } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const val = ctx.parsed || 0;
+                  const pct = ((val / somaPie) * 100).toFixed(1).replace('.', ',');
+                  return ` ${ctx.label}: ${MscEngine.formatarMoeda(val)} (${pct}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderizarProvaReal() {
+      const tbody = document.getElementById('tbodyProvaReal');
+      const ref = window.OFICIAL_SICONFI[estadoAtual.codigoSiconfi];
+      if (!ref) {
+        tbody.innerHTML = `<tr><td colspan="4">Município (${estadoAtual.codigoSiconfi}) sem gabarito pré-cadastrado. Apuração 100% dinâmica pela MSC.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = `
+        <tr><td>RCL (12M)</td><td class="num">${MscEngine.formatarMoeda(estadoAtual.totais.rcl)}</td><td class="num">${MscEngine.formatarMoeda(ref.rcl)}</td><td class="num">${MscEngine.formatarMoeda(estadoAtual.totais.rcl - ref.rcl)}</td></tr>
+        <tr><td>DLP Executivo</td><td class="num">${MscEngine.formatarMoeda(estadoAtual.totais.dtpExecutivo)}</td><td class="num">${MscEngine.formatarMoeda(ref.dtpExec)}</td><td class="num">${MscEngine.formatarMoeda(estadoAtual.totais.dtpExecutivo - ref.dtpExec)}</td></tr>
+      `;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Acesso — SIG Fiscal Municipal (UFRGS)</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <header class="topbar-galaxy">
+    <div id="stars"></div><div id="stars2"></div><div id="stars3"></div>
+    <a href="index.html" class="brand-area">
+      <div class="brand-mark">SIG</div>
+      <div class="brand-text">
+        <strong>SIG Fiscal Municipal</strong>
+        <span>UFRGS • Faculdade de Ciências Econômicas • SIG I & II</span>
+      </div>
+    </a>
+    <div class="topbar-right">
+      <span class="user-pill">Portaria STN nº 642 • MSC Agregada</span>
+    </div>
+  </header>
+
+  <main class="container" style="display: flex; align-items: center; justify-content: center;">
+    <div class="grid-2" style="align-items: center; max-width: 1000px; width: 100%;">
+      <!-- Apresentação Editorial no Caderno -->
+      <section class="card">
+        <span class="badge badge-info" style="margin-bottom: 0.75rem;">UFRGS • CONTABILIDADE PÚBLICA</span>
+        <h1 style="font-size: 1.75rem; color: var(--brand); line-height: 1.25; margin-bottom: 0.75rem;">
+          Análise Fiscal Municipal via Matriz de Saldos Contábeis
+        </h1>
+        <p style="color: var(--ink-soft); font-size: 0.92rem; margin-bottom: 1.25rem;">
+          Sistema web para importação em lote (<strong>.CSV</strong> ou <strong>.ZIP</strong>) dos 12 meses da
+          <strong>MSC Agregada</strong>, aplicando automaticamente os mapeamentos oficiais da STN para apuração de
+          <strong>RCL Ajustada</strong> e <strong>Despesa Total com Pessoal (DTP)</strong> por Poder.
+        </p>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 1.25rem;">
+          <!-- COMPONENTE START ANIMADO (start.txt) -->
+          <div class="start-btn-wrapper" onclick="acessarPerfil('tecnico', 'importacao.html')">
+            <div class="start-gradient-layer" style="animation-delay: 0s; animation-duration: 18s;"></div>
+            <div class="start-gradient-layer" style="animation-delay: 0.4s; animation-duration: 24s;"></div>
+            <button type="button" class="start-gradient-btn">INICIAR</button>
+            <div class="start-text-overlay">INICIAR</div>
+          </div>
+
+          <button type="button" class="btn-std" onclick="acessarPerfil('gestor', 'painel.html')">
+            Ir direto ao Painel
+          </button>
+          <button type="button" class="btn-std" onclick="acessarPerfil('cidadao', 'relatorios.html')">
+            Transparência / Histórico
+          </button>
+        </div>
+      </section>
+
+      <!-- COMPONENTE FORMULÁRIO RETRÔ (forms.txt) -->
+      <section class="retro-form-wrap">
+        <div class="retro-form-area">
+          <p class="retro-title">ENTRAR NO SIG</p>
+          <div id="authAlert" class="alert-box" style="width: 100%; margin-top: 0.5rem;"></div>
+
+          <form id="loginForm" style="width: 100%;">
+            <div class="retro-group">
+              <label class="retro-sub" for="email">E-mail / Usuário</label>
+              <input placeholder="Digite seu e-mail institucional" id="email" class="retro-input" type="email" required />
+            </div>
+            <div class="retro-group">
+              <label class="retro-sub" for="password">Senha</label>
+              <input placeholder="Digite sua senha" id="password" class="retro-input" type="password" required />
+            </div>
+            <button type="submit" id="btnLogin" class="retro-btn">ACESSAR SISTEMA</button>
+            <p style="font-size: 0.8rem; color: #264143;">
+              Modo apresentação? <a href="#" onclick="acessarPerfil('tecnico', 'importacao.html'); return false;" style="font-weight: 800; color: #264143;">Entrar como Técnico!</a>
+            </p>
+          </form>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <span>SIG I & II • Departamento de Ciências Contábeis e Atuariais — UFRGS</span>
+    <span>Dados públicos Siconfi/STN • Processamento local no navegador</span>
+  </footer>
+
+  <script src="js/supabase-client.js"></script>
+  <script>
+    const form = document.getElementById('loginForm');
+    const alertBox = document.getElementById('authAlert');
+    const btnLogin = document.getElementById('btnLogin');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertBox.className = 'alert-box info';
+      alertBox.textContent = 'Validando credenciais no Supabase...';
+      btnLogin.disabled = true;
+
+      const { error } = await window.AuthService.login(
+        document.getElementById('email').value.trim(),
+        document.getElementById('password').value.trim()
+      );
+      btnLogin.disabled = false;
+
+      if (error) {
+        alertBox.className = 'alert-box error';
+        alertBox.textContent = 'Erro no acesso: ' + error.message;
+      } else {
+        window.location.href = 'importacao.html';
+      }
+    });
+
+    function acessarPerfil(perfil, destino) {
+      window.AuthService.entrarDemo(perfil);
+      window.location.href = destino;
+    }
+  </script>
+</body>
+</html>

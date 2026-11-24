@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Demonstrativos e Histórico — SIG Fiscal (UFRGS)</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <header class="topbar-galaxy">
+    <div id="stars"></div><div id="stars2"></div><div id="stars3"></div>
+    <a href="importacao.html" class="brand-area">
+      <div class="brand-mark">SIG</div>
+      <div class="brand-text">
+        <strong>SIG Fiscal Municipal</strong>
+        <span>UFRGS • Contabilidade Pública</span>
+      </div>
+    </a>
+    <nav class="nav-links">
+      <a href="importacao.html" class="nav-link">1. Importação e Auditoria</a>
+      <a href="painel.html" class="nav-link">2. Painel RCL e DTP</a>
+      <a href="relatorios.html" class="nav-link active">3. Demonstrativos e Nuvem</a>
+    </nav>
+    <div class="topbar-right">
+      <span id="userPill" class="user-pill">Carregando...</span>
+      <button type="button" class="btn-std galaxy-out" onclick="AuthService.logout()">Sair</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div>
+        <h1>Módulo 3: Demonstrativos, Favoritos e Base em Nuvem</h1>
+        <p id="subtituloRelatorio">Série mensal de RCL/DTP e gerenciamento das análises salvas no Supabase.</p>
+      </div>
+      <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;" class="no-print">
+        <button type="button" class="btn-std primary" onclick="exportarExcel()">Exportar Excel (.XLSX)</button>
+        <button type="button" class="btn-std" onclick="window.print()">Imprimir / PDF</button>
+      </div>
+    </div>
+
+    <!-- DEMONSTRATIVO MENSAL -->
+    <section class="card" style="margin-bottom: 1.5rem;">
+      <h2 class="card-title">Demonstrativo Mensal — RCL e Despesas Executadas com Pessoal</h2>
+      <p class="card-subtitle">Competência a competência (<code>period_change</code>), com evolução mensal do percentual <code>% DLP / RCL</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Competência</th>
+              <th class="num">Receitas Correntes</th>
+              <th class="num">Deduções RCL</th>
+              <th class="num">RCL Mensal</th>
+              <th class="num">DLP Executivo</th>
+              <th class="num">DLP Legislativo</th>
+              <th class="num">% DLP / RCL</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyMensal">
+            <tr><td colspan="7">Nenhuma base carregada na sessão atual. Importe os dados no Módulo 1.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- HISTÓRICO SUPABASE COM EXCLUSÃO, FAVORITOS E BUSCA BRUTALIST -->
+    <section class="card">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+        <div>
+          <h2 class="card-title">Histórico de Apurações Salvas (Supabase)</h2>
+          <p class="card-subtitle" style="margin-bottom: 0;">Marque análises favoritas ou exclua registros duplicados diretamente do banco de dados.</p>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;" class="no-print">
+          <!-- SMOOTH BRUTALIST INPUT (insira nome.txt) -->
+          <div class="brutalist-container" style="width: 240px;">
+            <input id="filtroMunicipio" placeholder="Buscar município..." class="brutalist-input" type="text" />
+            <label class="brutalist-label">FILTRAR HISTÓRICO</label>
+          </div>
+
+          <!-- CHECKBOX RISCO À MÃO (chekcbox risco.txt) -->
+          <div class="checkbox-wrapper">
+            <input type="checkbox" class="check" id="chkSoFavoritos" />
+            <label for="chkSoFavoritos" class="label">
+              <svg width="34" height="34" viewBox="0 0 95 95">
+                <rect x="30" y="20" width="50" height="50" stroke="#264143" stroke-width="4" fill="none"></rect>
+                <g transform="translate(0,-952.36222)">
+                  <path d="m 56,963 c -102,122 6,9 7,9 17,-5 -66,69 -38,52 122,-77 -7,14 18,4 29,-11 45,-43 23,-4" stroke="#DE5499" stroke-width="5" fill="none" class="path1"></path>
+                </g>
+              </svg>
+              <span>Só Favoritos</span>
+            </label>
+          </div>
+
+          <button type="button" class="btn-std" onclick="carregarHistorico()">Atualizar</button>
+        </div>
+      </div>
+
+      <!-- PRISMA LOADER -->
+      <div id="cloudLoader" style="display: none; text-align: center; padding: 1.5rem 0;">
+        <div class="pyramid-loader">
+          <div class="wrapper">
+            <span class="side side1"></span><span class="side side2"></span>
+            <span class="side side3"></span><span class="side side4"></span>
+            <span class="shadow"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Favorito</th>
+              <th>Data/Hora</th>
+              <th>Município</th>
+              <th>Ref.</th>
+              <th class="num">RCL (12M)</th>
+              <th class="num">DLP Total</th>
+              <th class="num">% LRF</th>
+              <th>Parecer</th>
+              <th class="no-print">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tbodySupabase"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>SIG I & II • Faculdade de Ciências Econômicas — UFRGS</span>
+    <span>Banco sincronizado com Supabase (RLS ativo)</span>
+  </footer>
+
+  <script src="js/supabase-client.js"></script>
+  <script src="js/msc-engine.js"></script>
+  <script>
+    AuthService.preencherCabecalho();
+    const estado = MscEngine.carregarEstado();
+    let cacheHistorico = [];
+
+    if (estado) {
+      document.getElementById('subtituloRelatorio').textContent =
+        `${estado.municipio} (${estado.codigoSiconfi}) • ${estado.periodoInicial} a ${estado.periodoFinal}`;
+      renderizarTabelaMensal(estado);
+    }
+
+    document.getElementById('filtroMunicipio').addEventListener('input', renderizarHistorico);
+    document.getElementById('chkSoFavoritos').addEventListener('change', renderizarHistorico);
+    carregarHistorico();
+
+    function renderizarTabelaMensal(est) {
+      const tbody = document.getElementById('tbodyMensal');
+      const linhas = est.meses.map(m => {
+        const pct = m.rclMensal > 0 ? (m.dtpConsolidado / m.rclMensal) * 100 : 0;
+        return `
+          <tr>
+            <td class="mono"><strong>${m.periodo}</strong></td>
+            <td class="num">${MscEngine.formatarMoeda(m.recBruta)}</td>
+            <td class="num">${MscEngine.formatarMoeda(m.dedRcl)}</td>
+            <td class="num"><strong>${MscEngine.formatarMoeda(m.rclMensal)}</strong></td>
+            <td class="num">${MscEngine.formatarMoeda(m.dtpExecutivo)}</td>
+            <td class="num">${MscEngine.formatarMoeda(m.dtpLegislativo)}</td>
+            <td class="num"><strong>${MscEngine.formatarPct(pct)}</strong></td>
+          </tr>`;
+      }).join('');
+
+      const t = est.totais;
+      tbody.innerHTML = linhas + `
+        <tr style="background:#EDDCD9; font-weight:700;">
+          <td>TOTAL (12M)</td>
+          <td class="num">${MscEngine.formatarMoeda(est.meses.reduce((a, m) => a + m.recBruta, 0))}</td>
+          <td class="num">${MscEngine.formatarMoeda(est.meses.reduce((a, m) => a + m.dedRcl, 0))}</td>
+          <td class="num">${MscEngine.formatarMoeda(t.rcl)}</td>
+          <td class="num">${MscEngine.formatarMoeda(t.dtpExecutivo)}</td>
+          <td class="num">${MscEngine.formatarMoeda(t.dtpLegislativo)}</td>
+          <td class="num">${MscEngine.formatarPct(t.pctConsolidado)}</td>
+        </tr>`;
+    }
+
+    async function carregarHistorico() {
+      document.getElementById('cloudLoader').style.display = 'block';
+      const { data } = await CloudRepo.listarApuracoes();
+      document.getElementById('cloudLoader').style.display = 'none';
+      cacheHistorico = data || [];
+      renderizarHistorico();
+    }
+
+    function renderizarHistorico() {
+      const tbody = document.getElementById('tbodySupabase');
+      const termo = document.getElementById('filtroMunicipio').value.trim().toLowerCase();
+      const soFav = document.getElementById('chkSoFavoritos').checked;
+      const favsLocais = JSON.parse(localStorage.getItem('sig_favs_ids') || '{}');
+
+      const filtrados = cacheHistorico.filter(r => {
+        const ehFav = Boolean(r.favorito) || Boolean(favsLocais[r.id]);
+        if (soFav && !ehFav) return false;
+        if (termo && !`${r.municipio} ${r.codigo_siconfi} ${r.periodo_final}`.toLowerCase().includes(termo)) return false;
+        return true;
+      });
+
+      if (!filtrados.length) {
+        tbody.innerHTML = `<tr><td colspan="9">Nenhum registro encontrado para o filtro atual.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtrados.map(row => {
+        const ehFav = Boolean(row.favorito) || Boolean(favsLocais[row.id]);
+        return `
+          <tr>
+            <td>
+              <div class="fav-wrap">
+                <input type="checkbox" id="fav-${row.id}" ${ehFav ? 'checked' : ''} onchange="toggleFav(${row.id}, this.checked)" />
+                <label for="fav-${row.id}" style="padding: 4px 8px; gap: 6px;">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                  <div class="action">
+                    <span class="option-1">Fav</span>
+                    <span class="option-2">Sim</span>
+                  </div>
+                </label>
+              </div>
+            </td>
+            <td class="mono">${new Date(row.created_at).toLocaleString('pt-BR')}</td>
+            <td><strong>${row.municipio}</strong><br><small class="mono">${row.codigo_siconfi}</small></td>
+            <td class="mono">${row.periodo_final}</td>
+            <td class="num">${MscEngine.formatarMoeda(row.rcl)}</td>
+            <td class="num">${MscEngine.formatarMoeda(row.dtp)}</td>
+            <td class="num"><strong>${MscEngine.formatarPct(row.percentual_dtp)}</strong></td>
+            <td style="max-width: 180px; font-size: 0.78rem;">${row.parecer_analise || '—'}</td>
+            <td class="no-print">
+              <button type="button" class="btn-std danger" onclick="excluirLinha(${row.id})">Excluir</button>
+            </td>
+          </tr>`;
+      }).join('');
+    }
+
+    async function toggleFav(id, marcado) {
+      await CloudRepo.alternarFavorito(id, marcado);
+      const item = cacheHistorico.find(x => x.id === id);
+      if (item) item.favorito = marcado;
+      if (document.getElementById('chkSoFavoritos').checked) renderizarHistorico();
+    }
+
+    async function excluirLinha(id) {
+      if (!confirm('Deseja realmente excluir esta análise duplicada do Supabase?')) return;
+      const res = await CloudRepo.excluirApuracao(id);
+      if (res.ok) {
+        cacheHistorico = cacheHistorico.filter(x => x.id !== id);
+        renderizarHistorico();
+      } else {
+        alert('Erro ao excluir: ' + (res.error?.message || 'verifique as permissões RLS.'));
+      }
+    }
+
+    function exportarExcel() {
+      if (!estado || !estado.meses.length) return alert('Importe os dados da MSC no Módulo 1 antes de exportar.');
+      const dados = estado.meses.map(m => ({
+        Codigo_Siconfi: m.codigoSiconfi, Municipio: estado.municipio, Competencia: m.periodo,
+        Receitas_Correntes: Number(m.recBruta.toFixed(2)), Deducoes_RCL: Number(m.dedRcl.toFixed(2)),
+        RCL_Mensal: Number(m.rclMensal.toFixed(2)), DLP_Executivo: Number(m.dtpExecutivo.toFixed(2)),
+        DLP_Legislativo: Number(m.dtpLegislativo.toFixed(2)), DLP_Consolidada: Number(m.dtpConsolidado.toFixed(2))
+      }));
+      const ws = XLSX.utils.json_to_sheet(dados);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Demonstrativo_RCL_DTP');
+      XLSX.writeFile(wb, `SIG_Fiscal_${estado.codigoSiconfi}_${estado.periodoFinal}.xlsx`);
+    }
+  </script>
+</body>
+</html>
