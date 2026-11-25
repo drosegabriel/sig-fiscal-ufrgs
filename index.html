@@ -23,38 +23,21 @@
   </header>
 
   <main class="container" style="display: flex; align-items: center; justify-content: center;">
-    <div class="grid-2" style="align-items: center; max-width: 1000px; width: 100%;">
-      <!-- Apresentação Editorial no Caderno -->
+    <div class="login-grid-3">
+      <!-- Coluna 1: Apresentação Editorial -->
       <section class="card">
         <span class="badge badge-info" style="margin-bottom: 0.75rem;">UFRGS • CONTABILIDADE PÚBLICA</span>
-        <h1 style="font-size: 1.75rem; color: var(--brand); line-height: 1.25; margin-bottom: 0.75rem;">
+        <h1 style="font-size: 1.65rem; color: var(--brand); line-height: 1.25; margin-bottom: 0.75rem;">
           Análise Fiscal Municipal via Matriz de Saldos Contábeis
         </h1>
-        <p style="color: var(--ink-soft); font-size: 0.92rem; margin-bottom: 1.25rem;">
+        <p style="color: var(--ink-soft); font-size: 0.92rem; margin-bottom: 0;">
           Sistema web para importação em lote (<strong>.CSV</strong> ou <strong>.ZIP</strong>) dos 12 meses da
           <strong>MSC Agregada</strong>, aplicando automaticamente os mapeamentos oficiais da STN para apuração de
           <strong>RCL Ajustada</strong> e <strong>Despesa Total com Pessoal (DTP)</strong> por Poder.
         </p>
-
-        <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 1.25rem;">
-          <!-- COMPONENTE START ANIMADO (start.txt) -->
-          <div class="start-btn-wrapper" onclick="acessarPerfil('tecnico', 'importacao.html')">
-            <div class="start-gradient-layer" style="animation-delay: 0s; animation-duration: 18s;"></div>
-            <div class="start-gradient-layer" style="animation-delay: 0.4s; animation-duration: 24s;"></div>
-            <button type="button" class="start-gradient-btn">INICIAR</button>
-            <div class="start-text-overlay">INICIAR</div>
-          </div>
-
-          <button type="button" class="btn-std" onclick="acessarPerfil('gestor', 'painel.html')">
-            Ir direto ao Painel
-          </button>
-          <button type="button" class="btn-std" onclick="acessarPerfil('cidadao', 'relatorios.html')">
-            Transparência / Histórico
-          </button>
-        </div>
       </section>
 
-      <!-- COMPONENTE FORMULÁRIO RETRÔ (forms.txt) -->
+      <!-- Coluna 2: Formulário Retrô -->
       <section class="retro-form-wrap">
         <div class="retro-form-area">
           <p class="retro-title">ENTRAR NO SIG</p>
@@ -70,11 +53,20 @@
               <input placeholder="Digite sua senha" id="password" class="retro-input" type="password" required />
             </div>
             <button type="submit" id="btnLogin" class="retro-btn">ACESSAR SISTEMA</button>
-            <p style="font-size: 0.8rem; color: #264143;">
-              Modo apresentação? <a href="#" onclick="acessarPerfil('tecnico', 'importacao.html'); return false;" style="font-weight: 800; color: #264143;">Entrar como Técnico!</a>
-            </p>
+
+            <button type="button" id="btnExterno" class="retro-btn-secondary" onclick="entrarUsuarioExterno()">
+              ENTRAR COMO USUÁRIO EXTERNO
+            </button>
           </form>
         </div>
+      </section>
+
+      <!-- Coluna 3: Palco 3D do Avatar (invisível até o clique) -->
+      <section class="avatar-slot">
+        <figure id="avatarFigure" class="avatar-figure">
+          <img id="avatarImg" src="assets/MARIO SEM FUNDO.png" alt="Avatar Selecionado" />
+          <figcaption id="avatarCaption">PLAYER 1</figcaption>
+        </figure>
       </section>
     </div>
   </main>
@@ -89,30 +81,67 @@
     const form = document.getElementById('loginForm');
     const alertBox = document.getElementById('authAlert');
     const btnLogin = document.getElementById('btnLogin');
+    const btnExterno = document.getElementById('btnExterno');
 
+    function dispararAvatarEEntrar(personagem, destino) {
+      const fig = document.getElementById('avatarFigure');
+      const img = document.getElementById('avatarImg');
+      const cap = document.getElementById('avatarCaption');
+
+      fig.classList.remove('ativo', 'tema-mario', 'tema-yoshi');
+
+      if (personagem === 'mario') {
+        img.src = 'assets/MARIO SEM FUNDO.png';
+        img.alt = 'Mario';
+        cap.textContent = 'MARIO • INTERNO';
+        fig.classList.add('tema-mario');
+      } else {
+        img.src = 'assets/YOSHI SEM FUNDO.png';
+        img.alt = 'Yoshi';
+        cap.textContent = 'YOSHI • EXTERNO';
+        fig.classList.add('tema-yoshi');
+      }
+
+      requestAnimationFrame(() => {
+        fig.classList.add('ativo');
+      });
+
+      setTimeout(() => {
+        window.location.href = destino;
+      }, 1800);
+    }
+
+    // 1. Login Supabase -> Salta o MARIO e entra em importacao.html
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       alertBox.className = 'alert-box info';
       alertBox.textContent = 'Validando credenciais no Supabase...';
       btnLogin.disabled = true;
+      btnExterno.disabled = true;
 
       const { error } = await window.AuthService.login(
         document.getElementById('email').value.trim(),
         document.getElementById('password').value.trim()
       );
-      btnLogin.disabled = false;
 
       if (error) {
+        btnLogin.disabled = false;
+        btnExterno.disabled = false;
         alertBox.className = 'alert-box error';
         alertBox.textContent = 'Erro no acesso: ' + error.message;
       } else {
-        window.location.href = 'importacao.html';
+        alertBox.className = 'alert-box ok';
+        alertBox.textContent = 'Login aprovado! Iniciando...';
+        dispararAvatarEEntrar('mario', 'importacao.html');
       }
     });
 
-    function acessarPerfil(perfil, destino) {
-      window.AuthService.entrarDemo(perfil);
-      window.location.href = destino;
+    // 2. Botão Usuário Externo -> Salta o YOSHI e entra em painel.html
+    function entrarUsuarioExterno() {
+      btnLogin.disabled = true;
+      btnExterno.disabled = true;
+      window.AuthService.entrarDemo('cidadao');
+      dispararAvatarEEntrar('yoshi', 'painel.html');
     }
   </script>
 </body>
